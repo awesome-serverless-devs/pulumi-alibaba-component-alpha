@@ -1,0 +1,54 @@
+{
+  "name": "heimanba",
+  "version": "0.0.1",
+  "dependencies": {
+    "@pulumi/pulumi": "^2.19.0",
+    "@serverless-devs/core": "^0.0.7",
+    "@serverless-devs/s-core": "^0.0.22",
+    "@types/command-exists": "^1.2.0",
+    "@types/fs-extra": "^9.0.0",
+    "rimraf": "^3.0.2",
+    "shelljs": "^0.8.4",
+    "uuid": "^8.0.0"
+  },
+  "devDependencies": {
+    "@types/eslint": "^7.2.6",
+    "@types/jest": "^26.0.10",
+    "@types/node": "14",
+    "f2elint": "^0.4.4",
+    "jest": "^26.4.0",
+    "rimraf": "^3.0.2",
+    "ts-jest": "^26.2.0",
+    "ts-loader": "^8.0.14",
+    "ts-node": "^9.1.1",
+    "typescript": "^3.9.7",
+    "webpack": "^4.46.0",
+    "webpack-cli": "^4.4.0"
+  },
+  "scripts": {
+    "dev": "mkdir dist && cp -r src/config dist && npx tsc -w -p tsconfig.json",
+    "prebuild": "rimraf dist",
+    "build": "npx tsc -w -p tsconfig.json",
+    "build:component": "npx webpack --mode=production",
+    "publish": "npm run build:component && s platform publish",
+    "test": "jest",
+    "test:cov": "jest --coverage",
+    "lint": "f2elint scan",
+    "fix": "f2elint fix",
+    "typecheck": "npx tsc -p tsconfig.json --noEmit"
+  },
+  "husky": {
+    "hooks": {
+      "commit-msg": "f2elint exec commitlint -E HUSKY_GIT_PARAMS",
+      "pre-commit": "f2elint exec lint-staged"
+    }
+  },
+  "lint-staged": {
+    "**/*.{js,jsx,ts}": "f2elint exec eslint"
+  },
+  "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "node"
+  },
+  "__npminstall_done": false
+}

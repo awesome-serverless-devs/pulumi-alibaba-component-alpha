@@ -1,0 +1,43 @@
+Type: Component
+Name: pulumi
+Provider:
+  - Alibaba
+Version: 0.0.5
+Description: component标准组件starter
+HomePage: https://www.aliyun.com/
+Tags: #标签详情
+  - Starter
+  - Nodejs
+  - 函数计算
+Category: 基础云服务
+Commands:
+  destroy: 销毁
+  up: 部署
+  login: 登陆
+Service:
+  函数计算:
+    Runtime: Node.JS
+    Authorities:
+      - 创建函数
+      - 删除函数
+Properties:
+  region:
+    Required: true
+    Type:
+      - String
+  projectName:
+    Required: false
+    Type:
+      - String
+  stackName:
+    Required: false
+    Type:
+      - String
+  workDir:
+    Required: false
+    Type:
+      - String
+  runtime:
+    Required: false
+    Type:
+      - String
