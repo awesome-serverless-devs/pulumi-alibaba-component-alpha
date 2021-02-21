@@ -11,9 +11,18 @@ Tags: #标签详情
   - 函数计算
 Category: 基础云服务
 Commands:
-  destroy: 销毁
-  up: 部署
-  login: 登陆
+  destroy: 
+    zh: 销毁资源
+    en: destroy resource
+  up: 
+    zh: 部署资源
+    en: deploy resource
+  login: 
+    zh: 登陆 pulumi
+    en: login pulumi
+  stack:
+    zh: 操作 stack
+    en: operate stack
 Service:
   函数计算:
     Runtime: Node.JS
