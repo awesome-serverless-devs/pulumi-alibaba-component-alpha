@@ -6,3 +6,4 @@ demo:
     workDir: ./
     projectName: test-project
     stackName: test-stack
+    cloudPlatform: alicloud

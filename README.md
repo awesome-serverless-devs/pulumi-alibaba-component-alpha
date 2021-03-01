@@ -11,7 +11,7 @@ pulumi 组件基于 [pulumi automation api](https://www.pulumi.com/blog/automati
 rm -rf dist
 npm run dev
 
-cd example/deploy_fc && npm i
+cd examples/deploy_fc && npm i
 ```
 
 上述指令执行完成后，将当前项目下的 dist 目录的绝对路径填写至 [examples/deploy_fc/s.yaml](./examples/deploy_fc/s.yaml) 中的 component 字段，然后执行 ```s up ```指令即可。
