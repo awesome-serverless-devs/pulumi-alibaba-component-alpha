@@ -50,3 +50,7 @@ Properties:
     Required: false
     Type:
       - String
+  cloudPlatform:
+    Required: true
+    Type:
+      - String
