@@ -1,12 +1,11 @@
-import { Component } from '@serverless-devs/s-core';
 import * as pulumiAuto from '@pulumi/pulumi/x/automation';
 import * as path from 'path';
-import * as uuid from 'uuid';
+// import * as uuid from 'uuid';
 import * as os from 'os';
 import * as fse from 'fs-extra';
 import commandExists from 'command-exists';
 import * as shell from 'shelljs';
-import { HLogger, ILogger, report } from '@serverless-devs/core';
+import * as core from '@serverless-devs/core';
 import * as util from 'util';
 import { getLatestVersionOfPackage } from './utils/npm-pkg';
 
@@ -21,10 +20,9 @@ const DEFAULT = {
 
 const SUPPORTED_CLOUD_PLATFORMS = ['alicloud'];
 
-export default class PulumiComponent extends Component {
-  @HLogger('S-CORE') logger: ILogger;
+export default class PulumiComponent {
+  @core.HLogger('S-CORE') logger: core.ILogger;
   constructor() {
-    super();
     if (fse.pathExistsSync(DEFAULT.pulumiHome) && commandExists.sync('pulumi')) {
       // pulumi cli exists
       this.pulumiDir = path.dirname(DEFAULT.pulumiHome);
@@ -59,58 +57,41 @@ export default class PulumiComponent extends Component {
   }
 
   // 解析入参
-  async handlerInputs(inputs) {
-    await this.init();
-    const state = this.state || {};
-    // @ts-ignore
-    if (state.projectName) {
-      inputs.Properties = inputs.Properties || {};
-      // @ts-ignore
-      inputs.Properties.projectName = inputs.Properties.projectName || state.projectName;
-    }
-    // @ts-ignore
-    if (state.stackName) {
-      inputs.Properties = inputs.Properties || {};
-      // @ts-ignore
-      inputs.Properties.stackName = inputs.Properties.stackName || state.stackName;
-    }
-    const prop = inputs.Properties || {};
-    const creds = inputs.Credentials || {};
-    const serverlessDevsProject = inputs.Project || {};
-    const args = this.args(inputs.Args);
-    const serverlessDevsProjectName = serverlessDevsProject.ProjectName;
-    const provider = serverlessDevsProject.Provider;
-    // @ts-ignore
-    const projectName = prop.projectName || state.projectName || `pulumi-default-${serverlessDevsProjectName}-project-${uuid.v4()}`;
-    // @ts-ignore
-    const stackName = prop.stackName || state.stackName || `pulumi-default-${serverlessDevsProjectName}-stack-${uuid.v4()}`;
+  handlerInputs(inputs) {
+    const prop = inputs?.Properties || inputs?.properties;
+    const credentials = inputs?.Credentials || inputs?.credentials;
+    const serverlessDevsProject = inputs?.Project || inputs?.project;
+    const args = inputs?.Args || inputs?.args;
 
-    this.state = {
-      projectName,
-      stackName,
-    };
-    this.save();
+    let parsedArgs;
+    if (args) {
+      parsedArgs = core.commandParse({ args });
+    }
 
-    const workDir = prop.workDir || DEFAULT.workDir;
-    const runtime: pulumiAuto.ProjectRuntime = prop.runtime || DEFAULT.runtime;
-    const region = prop.region || DEFAULT.region;
-    const { cloudPlatform } = prop;
+    const provider = serverlessDevsProject?.Provider || serverlessDevsProject?.provider;
+
+    const workDir = prop?.workDir || DEFAULT.workDir;
+    const runtime: pulumiAuto.ProjectRuntime = prop?.runtime || DEFAULT.runtime;
+    const region = prop?.region || DEFAULT.region;
+    const cloudPlatform = prop?.cloudPlatform;
+    const stackName = prop?.stackName;
+    const projectName = prop?.projectName;
 
     if (!cloudPlatform || (SUPPORTED_CLOUD_PLATFORMS.indexOf(cloudPlatform) < 0)) {
-      this.logger.error(`${cloudPlatform} not supported now, supported cloud platform includes ${SUPPORTED_CLOUD_PLATFORMS}`);
+      this.logger.error(`\n${cloudPlatform} not supported now, supported cloud platform includes [${SUPPORTED_CLOUD_PLATFORMS}]`);
       throw new Error(`${cloudPlatform} not supported now, supported cloud platform includes ${SUPPORTED_CLOUD_PLATFORMS}`);
     }
 
     return {
-      creds,
+      credentials,
       provider,
-      projectName,
-      stackName,
       workDir,
       runtime,
       region,
-      args,
+      parsedArgs,
       cloudPlatform,
+      stackName,
+      projectName,
     };
   }
 
@@ -126,17 +107,18 @@ export default class PulumiComponent extends Component {
 
 
   async login(inputs): Promise<void> {
-    const { args, creds } = await this.handlerInputs(inputs);
+    const { parsedArgs, credentials } = this.handlerInputs(inputs);
 
-    await report('组件调用', {
+    await core.report('组件调用', {
       type: 'component',
       context: 'pulumi',
       params: {
         action: 'login',
-        account: creds.AccountID,
+        account: credentials.AccountID,
       },
     });
-    await this.loginPulumi(args.Commands[0]);
+    const argsData = parsedArgs.data;
+    await this.loginPulumi(argsData._[0]);
   }
 
   async getStack(stackName: string, workDir: string, projectName?: string, runtime?: pulumiAuto.ProjectRuntime): Promise<pulumiAuto.Stack> {
@@ -194,9 +176,6 @@ export default class PulumiComponent extends Component {
     }
 
     await stack.workspace.removeStack(stackName);
-
-    this.state = {};
-    this.save();
   }
 
   async listStack(workDir: string, stackName: string): Promise<pulumiAuto.StackSummary> {
@@ -212,33 +191,37 @@ export default class PulumiComponent extends Component {
 
   async stack(inputs): Promise<void> {
     const {
-      creds,
-      projectName,
-      stackName,
+      credentials,
       workDir,
       runtime,
       region,
-      args } = await this.handlerInputs(inputs);
-    await report('组件调用', {
+      parsedArgs,
+      stackName,
+      projectName,
+      cloudPlatform } = this.handlerInputs(inputs);
+    await core.report('组件调用', {
       type: 'component',
       context: 'pulumi',
       params: {
         action: 'stack',
-        account: creds.AccountID,
+        account: credentials.AccountID,
       },
     });
-    const commands = args.Commands;
-
-    await this.loginPulumi();
+    const commands = parsedArgs.data._;
+    if (!await fse.pathExists(path.join(this.pulumiHome, 'credentials.json'))) {
+      await this.loginPulumi();
+    }
 
     switch (commands[0]) {
       case 'init': {
         this.logger.log(`Initializing stack ${stackName} of project ${projectName}...`, 'yellow');
         const stack: pulumiAuto.Stack = await this.createStack(workDir, projectName, runtime, stackName);
         this.logger.log(`Stack ${stackName} of project ${projectName} created.`, 'green');
-        await stack.setConfig('alicloud:secretKey', { value: creds.AccessKeySecret, secret: true });
-        await stack.setConfig('alicloud:accessKey', { value: creds.AccessKeyID, secret: true });
-        await stack.setConfig('alicloud:region', { value: region });
+        if (cloudPlatform === 'alicloud') {
+          await stack.setConfig('alicloud:secretKey', { value: credentials.AccessKeySecret, secret: true });
+          await stack.setConfig('alicloud:accessKey', { value: credentials.AccessKeyID, secret: true });
+          await stack.setConfig('alicloud:region', { value: region });
+        }
         break;
       }
       case 'rm': {
@@ -266,28 +249,31 @@ export default class PulumiComponent extends Component {
 
   async up(inputs): Promise<string> {
     const {
-      creds,
+      credentials,
       cloudPlatform,
       projectName,
       stackName,
       workDir,
       runtime,
-      region } = await this.handlerInputs(inputs);
+      region } = this.handlerInputs(inputs);
 
-    await report('组件调用', {
+    await core.report('组件调用', {
       type: 'component',
       context: 'pulumi',
       params: {
         action: 'up',
-        account: creds.AccountID,
+        account: credentials.AccountID,
       },
     });
-    await this.loginPulumi();
+    if (!await fse.pathExists(path.join(this.pulumiHome, 'credentials.json'))) {
+      await this.loginPulumi();
+    }
     const stack = await this.createStack(workDir, projectName, runtime, stackName);
-
-    await stack.setConfig('alicloud:secretKey', { value: creds.AccessKeySecret, secret: true });
-    await stack.setConfig('alicloud:accessKey', { value: creds.AccessKeyID, secret: true });
-    await stack.setConfig('alicloud:region', { value: region });
+    if (cloudPlatform === 'alicloud') {
+      await stack.setConfig('alicloud:secretKey', { value: credentials.AccessKeySecret, secret: true });
+      await stack.setConfig('alicloud:accessKey', { value: credentials.AccessKeyID, secret: true });
+      await stack.setConfig('alicloud:region', { value: region });
+    }
 
     // await runPulumiCmd(['import', 'alicloud:fc/service:Service' , 'import-test', 'python37-demo', '--yes', '--protect=false', `--stack ${stackName}`], process.cwd(), { PULUMI_HOME: this.pulumiHome, PULUMI_CONFIG_PASSPHRASE: this.pulumiConfigPassphrase }, console.log);
     await this.installPlugins(cloudPlatform, stackName, stack);
@@ -303,30 +289,34 @@ export default class PulumiComponent extends Component {
 
   async destroy(inputs): Promise<string> {
     const {
-      creds,
+      credentials,
       cloudPlatform,
       stackName,
       workDir,
-      region } = await this.handlerInputs(inputs);
+      region } = this.handlerInputs(inputs);
 
-    await report('组件调用', {
+    await core.report('组件调用', {
       type: 'component',
       context: 'pulumi',
       params: {
         action: 'destroy',
-        account: creds.AccountID,
+        account: credentials.AccountID,
       },
     });
-    await this.loginPulumi();
+    if (!await fse.pathExists(path.join(this.pulumiHome, 'credentials.json'))) {
+      await this.loginPulumi();
+    }
     const stack = await this.getStack(stackName, workDir);
 
     if (!stack) {
       this.logger.log(`Stack: ${stackName} not exist, please create it first!`, 'red');
       return;
     }
-    await stack.setConfig('alicloud:secretKey', { value: creds.AccessKeySecret, secret: true });
-    await stack.setConfig('alicloud:accessKey', { value: creds.AccessKeyID, secret: true });
-    await stack.setConfig('alicloud:region', { value: region });
+    if (cloudPlatform === 'alicloud') {
+      await stack.setConfig('alicloud:secretKey', { value: credentials.AccessKeySecret, secret: true });
+      await stack.setConfig('alicloud:accessKey', { value: credentials.AccessKeyID, secret: true });
+      await stack.setConfig('alicloud:region', { value: region });
+    }
 
     await this.installPlugins(cloudPlatform, stackName, stack);
 

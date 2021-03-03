@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as rimraf from 'rimraf';
 import { Logger, downloadRequest } from '@serverless-devs/core';
 
-const VERSION = '2.19.0';
+const VERSION = '2.21.2';
 
 async function install() {
   // 判断 pulumi 是否存在
@@ -17,7 +17,7 @@ async function install() {
     Logger.log('Windows not supported now!Please install it manually.', 'red');
   } else if ((process.platform === 'darwin' || process.platform === 'linux') && process.arch === 'x64') {
     // const tarballUrl = `https://get.pulumi.com/releases/sdk/pulumi-v${VERSION}-${process.platform}-x64.tar.gz`;
-    const tarballUrl = 'https://serverless-tool.oss-cn-hangzhou.aliyuncs.com/others/pulumi-alibaba-component/pulumi-v2.19.0-darwin-x64.tar.gz?versionId=CAEQFRiBgMD7hsDAuxciIDczZWRiZjI4NzVlNjRkMjc4MjA0MDE4YWM0MTc0Mjli';
+    const tarballUrl = 'https://serverless-tool.oss-cn-hangzhou.aliyuncs.com/others/pulumi-alibaba-component/pulumi-v2.21.2-darwin-x64.tar.gz?versionId=CAEQFRiBgMDVj_LWvxciIGY3YmZiMDMxMzNlNTQ2ZDk4M2Q2MzcyN2YzYTNiM2M5';
     const dest = path.join(__dirname, 'pulumi.tar.gz');
     if (await fse.pathExists(dest)) {
       await fse.unlink(dest);
