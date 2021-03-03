@@ -39,5 +39,3 @@ lerna-debug.log*
 # config of pulumi
 **/Pulumi.*.yaml
 **/Pulumi.yaml
-
-**/package-lock.json
