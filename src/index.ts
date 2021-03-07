@@ -19,6 +19,7 @@ const DEFAULT = {
 };
 
 const SUPPORTED_CLOUD_PLATFORMS = ['alicloud'];
+const PULUMI_INSTALL_FILE_PATH = path.join(__dirname, 'utils/pulumi/install.js');
 
 export default class PulumiComponent {
   @core.HLogger('S-CORE') logger: core.ILogger;
@@ -29,13 +30,13 @@ export default class PulumiComponent {
       this.pulumiHome = DEFAULT.pulumiHome;
       this.pulumiAlreadyExists = true;
     } else {
-      this.pulumiDir = path.join(__dirname, 'utils', 'pulumi');
+      this.pulumiDir = os.homedir();
       this.pulumiHome = path.join(this.pulumiDir, '.pulumi');
       this.pulumiBin = path.join(this.pulumiHome, 'bin');
       this.pulumiPath = path.join(this.pulumiBin, 'pulumi');
 
       if (!fse.pathExistsSync(this.pulumiPath)) {
-        shell.exec(`node ${path.join(this.pulumiDir, 'install.js')}`);
+        shell.exec(`node ${PULUMI_INSTALL_FILE_PATH}`);
       }
       this.pulumiAlreadyExists = false;
     }
@@ -247,7 +248,7 @@ export default class PulumiComponent {
     }
   }
 
-  async up(inputs): Promise<string> {
+  async up(inputs): Promise<any> {
     const {
       credentials,
       cloudPlatform,
@@ -284,10 +285,13 @@ export default class PulumiComponent {
     // const his = await stack.history();
     // const output = await stack.outputs();
 
-    return upRes.stdout;
+    return {
+      stdout: upRes.stdout,
+      stderr: upRes.stderr,
+    };
   }
 
-  async destroy(inputs): Promise<string> {
+  async destroy(inputs): Promise<any> {
     const {
       credentials,
       cloudPlatform,
@@ -323,7 +327,10 @@ export default class PulumiComponent {
     const destroyRes = await stack.destroy({ onOutput: console.log });
     // await stack.workspace.removeStack(stackName);
 
-    return destroyRes.stdout;
+    return {
+      stdout: destroyRes.stdout,
+      stderr: destroyRes.stderr,
+    };
   }
 
 

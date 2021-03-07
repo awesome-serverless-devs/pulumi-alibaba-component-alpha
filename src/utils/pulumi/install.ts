@@ -3,27 +3,29 @@ import * as fse from 'fs-extra';
 import * as path from 'path';
 import * as rimraf from 'rimraf';
 import { Logger, downloadRequest } from '@serverless-devs/core';
+import * as os from 'os';
 
 const VERSION = '2.21.2';
 
 async function install() {
   // 判断 pulumi 是否存在
   if (commandExists.sync('pulumi')) {
-    Logger.log('pulumi exist!');
+    Logger.log('pulumi exist!', 'green');
     return;
   }
   // 判断平台
   if (process.platform === 'win32' && process.arch === 'x64') {
-    Logger.log('Windows not supported now!Please install it manually.', 'red');
+    Logger.error('PULUMI_INSTALL_ERROR', 'Windows not supported now!Please install it manually.');
   } else if ((process.platform === 'darwin' || process.platform === 'linux') && process.arch === 'x64') {
     // const tarballUrl = `https://get.pulumi.com/releases/sdk/pulumi-v${VERSION}-${process.platform}-x64.tar.gz`;
-    const tarballUrl = 'https://serverless-tool.oss-cn-hangzhou.aliyuncs.com/others/pulumi-alibaba-component/pulumi-v2.21.2-darwin-x64.tar.gz?versionId=CAEQFRiBgMDVj_LWvxciIGY3YmZiMDMxMzNlNTQ2ZDk4M2Q2MzcyN2YzYTNiM2M5';
+    const tarballUrl = `https://serverless-tool.oss-cn-hangzhou.aliyuncs.com/others/pulumi-alibaba-component/pulumi-v${VERSION}-darwin-x64.tar.gz?versionId=CAEQFRiBgMDVj_LWvxciIGY3YmZiMDMxMzNlNTQ2ZDk4M2Q2MzcyN2YzYTNiM2M5`;
     const dest = path.join(__dirname, 'pulumi.tar.gz');
     if (await fse.pathExists(dest)) {
       await fse.unlink(dest);
     }
     Logger.log(`Installing Pulumi v${VERSION} from ${tarballUrl}...`, 'yellow');
-    const pulumiHome = path.join(__dirname, '.pulumi');
+    // const pulumiHome = path.join(os.homedir(), '.pulumiComponent/.pulumi');
+    const pulumiHome = path.join(os.homedir(), '.pulumi');
     const tmpDir = path.join(__dirname, '.pulumiTmp/');
     if (await fse.pathExists(pulumiHome)) { rimraf.sync(pulumiHome); }
     if (await fse.pathExists(tmpDir)) { rimraf.sync(tmpDir); }
@@ -44,7 +46,7 @@ async function install() {
 
     rimraf.sync(tmpDir);
   } else {
-    Logger.log("We're sorry, but it looks like Pulumi is not supported on your platform! More infomation please refer to https://github.com/pulumi/pulumi", 'red');
+    Logger.error('PULUMI_INSTALL_ERROR', "We're sorry, but it looks like Pulumi is not supported on your platform! More infomation please refer to https://github.com/pulumi/pulumi");
   }
 }
 
