@@ -1,6 +1,7 @@
 demo:
   # Component: /Users/zqf/Documents/git_proj/serverless-devs-component/pulumi-alibaba-component-alpha/dist
   Component: pulumi-alibaba
+  Access: default
   Provider: alibaba
   Properties:
     region: cn-hangzhou

@@ -3,13 +3,14 @@
   "version": "0.0.1",
   "dependencies": {
     "@pulumi/pulumi": "^2.21.2",
-    "@serverless-devs/core": "^0.0.29",
-    "@types/command-exists": "^1.2.0",
+    "@serverless-devs/core": "^0.0.37",
+    "command-exists": "^1.2.9",
     "@types/fs-extra": "^9.0.0",
     "rimraf": "^3.0.2",
     "shelljs": "^0.8.4",
     "uuid": "^8.0.0",
-    "@types/shelljs": "0.8.8"
+    "@types/shelljs": "0.8.8",
+    "@types/lodash": "^4.14.168"
   },
   "devDependencies": {
     "@types/eslint": "^7.2.6",
@@ -28,7 +29,8 @@
   "scripts": {
     "dev": "npx tsc -w -p tsconfig.json",
     "prebuild": "rimraf dist",
-    "build": "npx tsc -w -p tsconfig.json",
+    "build": "npx tsc -p tsconfig.json",
+    "postbuild": "cp package.json dist/ && cp package-lock.json dist/",
     "build:component": "npx webpack --mode=production",
     "publish": "npm run build && s platform publish",
     "test": "jest",

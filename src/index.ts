@@ -8,6 +8,7 @@ import * as shell from 'shelljs';
 import * as core from '@serverless-devs/core';
 import * as util from 'util';
 import { getLatestVersionOfPackage } from './utils/npm-pkg';
+import * as _ from 'lodash';
 
 const { runPulumiCmd } = require('@pulumi/pulumi/x/automation/cmd');
 
@@ -22,7 +23,7 @@ const SUPPORTED_CLOUD_PLATFORMS = ['alicloud'];
 const PULUMI_INSTALL_FILE_PATH = path.join(__dirname, 'utils/pulumi/install.js');
 
 export default class PulumiComponent {
-  @core.HLogger('S-CORE') logger: core.ILogger;
+  @core.HLogger('PULUMI-ALIBABA') logger: core.ILogger;
   constructor() {
     if (fse.pathExistsSync(DEFAULT.pulumiHome) && commandExists.sync('pulumi')) {
       // pulumi cli exists
@@ -42,7 +43,7 @@ export default class PulumiComponent {
     }
 
     this.pulumiConfigPassphrase = 'password';
-    this.logger.log(`PULUMI_CONFIG_PASSPHRASE is ${this.pulumiConfigPassphrase}`, 'yellow');
+    this.logger.info(`PULUMI_CONFIG_PASSPHRASE is ${this.pulumiConfigPassphrase}`);
 
     if (!this.pulumiAlreadyExists) {
       process.env.PATH = `${process.env.PATH }:${this.pulumiBin}`;
@@ -58,18 +59,13 @@ export default class PulumiComponent {
   }
 
   // 解析入参
-  handlerInputs(inputs) {
+  async handlerInputs(inputs) {
     const prop = inputs?.Properties || inputs?.properties;
-    const credentials = inputs?.Credentials || inputs?.credentials;
-    const serverlessDevsProject = inputs?.Project || inputs?.project;
+    const project = inputs?.project || inputs?.Project;
+    const provider = project?.Provider || project?.provider;
+    const accessAlias = project?.AccessAlias || project?.accessAlias;
     const args = inputs?.Args || inputs?.args;
-
-    let parsedArgs;
-    if (args) {
-      parsedArgs = core.commandParse({ args });
-    }
-
-    const provider = serverlessDevsProject?.Provider || serverlessDevsProject?.provider;
+    const credentials = await core.getCredential(provider, accessAlias || '');
 
     const workDir = prop?.workDir || DEFAULT.workDir;
     const runtime: pulumiAuto.ProjectRuntime = prop?.runtime || DEFAULT.runtime;
@@ -85,31 +81,45 @@ export default class PulumiComponent {
 
     return {
       credentials,
-      provider,
       workDir,
       runtime,
       region,
-      parsedArgs,
+      args,
       cloudPlatform,
       stackName,
       projectName,
     };
   }
 
-  async loginPulumi(url?: string): Promise<void> {
-    if (url) {
-      // @ts-ignore
-      await runPulumiCmd(['login', url], process.cwd(), this.pulumiEnvs, console.log);
+  async loginPulumi(url?: string, isLocal?: boolean, isSilent?: boolean): Promise<void> {
+    if (isLocal) {
+      await runPulumiCmd(['login', `file://${this.pulumiDir}`], process.cwd(), this.pulumiEnvs, isSilent ? undefined : console.log);
     } else {
-      // login local
-      await runPulumiCmd(['login', `file://${this.pulumiDir}`], process.cwd(), this.pulumiEnvs, console.log);
+      await runPulumiCmd(['login', url], process.cwd(), this.pulumiEnvs, isSilent ? undefined : console.log);
     }
   }
 
 
   async login(inputs): Promise<void> {
-    const { parsedArgs, credentials } = this.handlerInputs(inputs);
+    const { args, credentials } = await this.handlerInputs(inputs);
+    this.logger.debug(`args: ${JSON.stringify(args)}`);
+    const parsedArgs: {[key: string]: any} = core.commandParse({ args }, { boolean: ['s', 'silent', 'local'] });
+    this.logger.debug(`parsedArgs: ${JSON.stringify(parsedArgs)}`);
+    const nonOptionsArgs = parsedArgs.data?._;
 
+    const isSilent = parsedArgs.data?.s || parsedArgs.data?.silent;
+    const isLocal = parsedArgs.data?.local;
+    if (_.isEmpty(nonOptionsArgs) && !isLocal) {
+      this.logger.error('error: expects argument.');
+      // help info
+      return;
+    }
+    if (nonOptionsArgs.length > 1) {
+      this.logger.error(`error: unexpected argument: ${nonOptionsArgs[1]}`);
+      // help info
+      return;
+    }
+    const loginUrl = nonOptionsArgs[0];
     await core.report('组件调用', {
       type: 'component',
       context: 'pulumi',
@@ -118,8 +128,7 @@ export default class PulumiComponent {
         account: credentials.AccountID,
       },
     });
-    const argsData = parsedArgs.data;
-    await this.loginPulumi(argsData._[0]);
+    await this.loginPulumi(loginUrl, isLocal, isSilent);
   }
 
   async getStack(stackName: string, workDir: string, projectName?: string, runtime?: pulumiAuto.ProjectRuntime): Promise<pulumiAuto.Stack> {
@@ -172,7 +181,7 @@ export default class PulumiComponent {
   async removeStack(workDir: string, stackName: string): Promise<void> {
     const stack = await this.getStack(stackName, workDir);
     if (!stack) {
-      this.logger.log(`Stack: ${stackName} not exist, please create it first!`, 'red');
+      this.logger.error(`Stack: ${stackName} not exist, please create it first!`);
       return;
     }
 
@@ -182,7 +191,7 @@ export default class PulumiComponent {
   async listStack(workDir: string, stackName: string): Promise<pulumiAuto.StackSummary> {
     const stack = await this.getStack(stackName, workDir);
     if (!stack) {
-      this.logger.log(`Stack: ${stackName} not exist, please create it first!`, 'red');
+      this.logger.error(`Stack: ${stackName} not exist, please create it first!`);
       return;
     }
 
@@ -196,10 +205,10 @@ export default class PulumiComponent {
       workDir,
       runtime,
       region,
-      parsedArgs,
+      args,
       stackName,
       projectName,
-      cloudPlatform } = this.handlerInputs(inputs);
+      cloudPlatform } = await this.handlerInputs(inputs);
     await core.report('组件调用', {
       type: 'component',
       context: 'pulumi',
@@ -208,16 +217,32 @@ export default class PulumiComponent {
         account: credentials.AccountID,
       },
     });
-    const commands = parsedArgs.data._;
+    this.logger.debug(`args: ${JSON.stringify(args)}`);
+    const parsedArgs: {[key: string]: any} = core.commandParse({ args }, { boolean: ['s', 'silent'] });
+    this.logger.debug(`parsedArgs: ${JSON.stringify(parsedArgs)}`);
+    const nonOptionsArgs = parsedArgs.data?._;
+
+    if (_.isEmpty(nonOptionsArgs)) {
+      this.logger.error(' error: expects argument.');
+      // help info
+      return;
+    }
+    if (nonOptionsArgs.length > 1) {
+      this.logger.error(` error: unexpected argument: ${nonOptionsArgs[1]}`);
+      // help info
+      return;
+    }
+    const subCmd: string = nonOptionsArgs[0];
+
     if (!await fse.pathExists(path.join(this.pulumiHome, 'credentials.json'))) {
-      await this.loginPulumi();
+      await this.loginPulumi(undefined, true);
     }
 
-    switch (commands[0]) {
+    switch (subCmd) {
       case 'init': {
-        this.logger.log(`Initializing stack ${stackName} of project ${projectName}...`, 'yellow');
+        this.logger.info(`Initializing stack ${stackName} of project ${projectName}...`);
         const stack: pulumiAuto.Stack = await this.createStack(workDir, projectName, runtime, stackName);
-        this.logger.log(`Stack ${stackName} of project ${projectName} created.`, 'green');
+        this.logger.info(`Stack ${stackName} of project ${projectName} created.`);
         if (cloudPlatform === 'alicloud') {
           await stack.setConfig('alicloud:secretKey', { value: credentials.AccessKeySecret, secret: true });
           await stack.setConfig('alicloud:accessKey', { value: credentials.AccessKeyID, secret: true });
@@ -226,24 +251,24 @@ export default class PulumiComponent {
         break;
       }
       case 'rm': {
-        this.logger.log(`Removing stack ${stackName}...`, 'yellow');
+        this.logger.info(`Removing stack ${stackName}...`);
         await this.removeStack(workDir, stackName);
-        this.logger.log(`Stack ${stackName} of project ${projectName} removed.`, 'green');
+        this.logger.info(`Stack ${stackName} of project ${projectName} removed.`);
         break;
       }
       case 'ls': {
         const curStack: pulumiAuto.StackSummary = await this.listStack(workDir, stackName);
         if (curStack) {
-          this.logger.log(`Summary of stack ${stackName} is: `, 'green');
-          console.log(util.inspect(curStack, true, null, true));
+          this.logger.info(`Summary of stack ${stackName} is: `);
+          this.logger.log(util.inspect(curStack, true, null, true), 'green');
         } else {
-          this.logger.log(`Summary of stack ${stackName} is undefined.`, 'red');
+          this.logger.info(`Summary of stack ${stackName} is undefined.`);
         }
 
         break;
       }
       default: {
-        this.logger.log(`Sorry, stack ${commands[0]} is not supported for pulumi component`, 'red');
+        this.logger.info(`Sorry, stack ${subCmd} is not supported for pulumi component`);
       }
     }
   }
@@ -256,7 +281,8 @@ export default class PulumiComponent {
       stackName,
       workDir,
       runtime,
-      region } = this.handlerInputs(inputs);
+      region,
+      args } = await this.handlerInputs(inputs);
 
     await core.report('组件调用', {
       type: 'component',
@@ -266,8 +292,18 @@ export default class PulumiComponent {
         account: credentials.AccountID,
       },
     });
+    const parsedArgs: {[key: string]: any} = core.commandParse({ args }, { boolean: ['s', 'silent', 'local'] });
+    this.logger.debug(`parsedArgs: ${JSON.stringify(parsedArgs)}`);
+    const nonOptionsArgs = parsedArgs.data?._;
+
+    const isSilent = parsedArgs.data?.s || parsedArgs.data?.silent;
+    if (!_.isEmpty(nonOptionsArgs)) {
+      this.logger.error(`error: unexpect argument ${nonOptionsArgs}`);
+      // help info
+      return;
+    }
     if (!await fse.pathExists(path.join(this.pulumiHome, 'credentials.json'))) {
-      await this.loginPulumi();
+      await this.loginPulumi(undefined, true, isSilent);
     }
     const stack = await this.createStack(workDir, projectName, runtime, stackName);
     if (cloudPlatform === 'alicloud') {
@@ -279,9 +315,9 @@ export default class PulumiComponent {
     // await runPulumiCmd(['import', 'alicloud:fc/service:Service' , 'import-test', 'python37-demo', '--yes', '--protect=false', `--stack ${stackName}`], process.cwd(), { PULUMI_HOME: this.pulumiHome, PULUMI_CONFIG_PASSPHRASE: this.pulumiConfigPassphrase }, console.log);
     await this.installPlugins(cloudPlatform, stackName, stack);
 
-    await stack.refresh({ onOutput: console.log });
+    await stack.refresh({ onOutput: isSilent ? undefined : console.log });
 
-    const upRes = await stack.up({ onOutput: console.log });
+    const upRes = await stack.up({ onOutput: isSilent ? undefined : console.log });
     // const his = await stack.history();
     // const output = await stack.outputs();
 
@@ -297,7 +333,8 @@ export default class PulumiComponent {
       cloudPlatform,
       stackName,
       workDir,
-      region } = this.handlerInputs(inputs);
+      region,
+      args } = await this.handlerInputs(inputs);
 
     await core.report('组件调用', {
       type: 'component',
@@ -307,13 +344,23 @@ export default class PulumiComponent {
         account: credentials.AccountID,
       },
     });
-    if (!await fse.pathExists(path.join(this.pulumiHome, 'credentials.json'))) {
-      await this.loginPulumi();
+    const parsedArgs: {[key: string]: any} = core.commandParse({ args }, { boolean: ['s', 'silent', 'local'] });
+    this.logger.debug(`parsedArgs: ${JSON.stringify(parsedArgs)}`);
+    const nonOptionsArgs = parsedArgs.data?._;
+    if (!_.isEmpty(nonOptionsArgs)) {
+      this.logger.error(`error: unexpect argument ${nonOptionsArgs}`);
+      // help info
+      return;
     }
+    const isSilent = parsedArgs.data?.s || parsedArgs.data?.silent;
+    if (!await fse.pathExists(path.join(this.pulumiHome, 'credentials.json'))) {
+      await this.loginPulumi(undefined, true, isSilent);
+    }
+
     const stack = await this.getStack(stackName, workDir);
 
     if (!stack) {
-      this.logger.log(`Stack: ${stackName} not exist, please create it first!`, 'red');
+      this.logger.error(`Stack: ${stackName} not exist, please create it first!`);
       return;
     }
     if (cloudPlatform === 'alicloud') {
@@ -324,7 +371,7 @@ export default class PulumiComponent {
 
     await this.installPlugins(cloudPlatform, stackName, stack);
 
-    const destroyRes = await stack.destroy({ onOutput: console.log });
+    const destroyRes = await stack.destroy({ onOutput: isSilent ? undefined : console.log });
     // await stack.workspace.removeStack(stackName);
 
     return {
@@ -337,7 +384,7 @@ export default class PulumiComponent {
   async installPlugins(cloudPlatform: string, stackName: string, stack: pulumiAuto.Stack): Promise<void> {
     const pkgName = `@pulumi/${cloudPlatform}`;
     const version = `v${getLatestVersionOfPackage(pkgName)}`;
-    this.logger.log(`Installing plugin ${cloudPlatform}:${version}`, 'yellow');
+    this.logger.info(`wating for plugin ${cloudPlatform}:${version} to be installed`);
     await stack.workspace.installPlugin(cloudPlatform, version);
   }
 

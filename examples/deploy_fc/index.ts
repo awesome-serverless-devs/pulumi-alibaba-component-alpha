@@ -1,7 +1,9 @@
 import * as alicloud from '@pulumi/alicloud';
 
 // Create the FC service
-const service = new alicloud.fc.Service('qianfeng-pulumi-local-demo-and-one');
+const service = new alicloud.fc.Service('qianfeng-pulumi-local-demo-and-one', {
+  name: 'qianfeng-pulumi-local-demo-and-one',
+});
 
 // const AdmZip = require("adm-zip");
 // const zipFile = new AdmZip();
@@ -16,7 +18,7 @@ const func = new alicloud.fc.Function('my-function-1', {
   runtime: 'nodejs10',
   memorySize: 128,
   service: service.name,
-  filename: './code/index.js',
+  filename: './code.zip',
   name: 'my-function-1',
 });
 
