@@ -314,16 +314,39 @@ export default class PulumiComponent {
 
     // await runPulumiCmd(['import', 'alicloud:fc/service:Service' , 'import-test', 'python37-demo', '--yes', '--protect=false', `--stack ${stackName}`], process.cwd(), { PULUMI_HOME: this.pulumiHome, PULUMI_CONFIG_PASSPHRASE: this.pulumiConfigPassphrase }, console.log);
     await this.installPlugins(cloudPlatform, stackName, stack);
+    try {
+      const refreshRes = await stack.refresh({ onOutput: isSilent ? undefined : console.log });
+      this.logger.debug(`refresh res: ${JSON.stringify(refreshRes)}`);
+    } catch (e) {
+      if (e.message.includes('unknown flag: --page-size')) {
+        this.logger.error('Please update your pulumi cli and retry. Refer to https://www.pulumi.com/docs/get-started/install/');
+        return;
+      }
+      throw e;
+    }
+    let res;
+    try {
+      res = await stack.up({ onOutput: isSilent ? undefined : console.log });
+      if (!_.isEmpty(res?.stderr)) {
+        if (res?.stderr.includes('unknown flag: --page-size')) {
+          this.logger.error('Please update your pulumi cli and retry. Refer to https://www.pulumi.com/docs/get-started/install/');
+          return;
+        }
+      }
+    } catch (e) {
+      if (e.message.includes('unknown flag: --page-size')) {
+        this.logger.error('Please update your pulumi cli and retry. Refer to https://www.pulumi.com/docs/get-started/install/');
+        return;
+      }
+      throw e;
+    }
 
-    await stack.refresh({ onOutput: isSilent ? undefined : console.log });
-
-    const upRes = await stack.up({ onOutput: isSilent ? undefined : console.log });
     // const his = await stack.history();
     // const output = await stack.outputs();
 
     return {
-      stdout: upRes.stdout,
-      stderr: upRes.stderr,
+      stdout: res?.stdout,
+      stderr: res?.stderr,
     };
   }
 
@@ -371,12 +394,26 @@ export default class PulumiComponent {
 
     await this.installPlugins(cloudPlatform, stackName, stack);
 
-    const destroyRes = await stack.destroy({ onOutput: isSilent ? undefined : console.log });
+    let res;
+    try {
+      res = await stack.destroy({ onOutput: isSilent ? undefined : console.log });
+      if (!_.isEmpty(res?.stderr)) {
+        if (res?.stderr.includes('unknown flag: --page-size')) {
+          this.logger.error('Please update your pulumi cli and retry. Refer to https://www.pulumi.com/docs/get-started/install/');
+          return;
+        }
+      }
+    } catch (e) {
+      if (e.message.includes('unknown flag: --page-size')) {
+        this.logger.error('Please update your pulumi cli and retry. Refer to https://www.pulumi.com/docs/get-started/install/');
+        return;
+      }
+      throw e;
+    }
     // await stack.workspace.removeStack(stackName);
-
     return {
-      stdout: destroyRes.stdout,
-      stderr: destroyRes.stderr,
+      stdout: res?.stdout,
+      stderr: res?.stderr,
     };
   }
 
