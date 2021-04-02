@@ -60,6 +60,7 @@ export default class PulumiComponent {
 
   // 解析入参
   async handlerInputs(inputs) {
+    process.setMaxListeners(0);
     const prop = inputs?.Properties || inputs?.properties;
     const project = inputs?.project || inputs?.Project;
     const provider = project?.Provider || project?.provider;
