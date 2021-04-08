@@ -10,7 +10,8 @@
     "shelljs": "^0.8.4",
     "uuid": "^8.0.0",
     "@types/shelljs": "0.8.8",
-    "@types/lodash": "^4.14.168"
+    "@types/lodash": "^4.14.168",
+    "semver": "^7.3.5"
   },
   "devDependencies": {
     "@types/eslint": "^7.2.6",
