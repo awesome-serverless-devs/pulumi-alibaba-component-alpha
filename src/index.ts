@@ -1,6 +1,5 @@
 import * as pulumiAuto from '@pulumi/pulumi/x/automation';
 import * as path from 'path';
-// import * as uuid from 'uuid';
 import * as os from 'os';
 import * as fse from 'fs-extra';
 import commandExists from 'command-exists';
@@ -9,6 +8,7 @@ import * as core from '@serverless-devs/core';
 import * as util from 'util';
 import { getLatestVersionOfPackage } from './utils/npm-pkg';
 import * as _ from 'lodash';
+import semver from 'semver';
 
 const { runPulumiCmd } = require('@pulumi/pulumi/x/automation/cmd');
 
@@ -21,6 +21,7 @@ const DEFAULT = {
 
 const SUPPORTED_CLOUD_PLATFORMS = ['alicloud'];
 const PULUMI_INSTALL_FILE_PATH = path.join(__dirname, 'utils/pulumi/install.js');
+const MIN_PULUMI_VERSION = 'v2.21.0';
 
 export default class PulumiComponent {
   @core.HLogger('PULUMI-ALIBABA') logger: core.ILogger;
@@ -48,16 +49,21 @@ export default class PulumiComponent {
     if (!this.pulumiAlreadyExists) {
       process.env.PATH = `${process.env.PATH }:${this.pulumiBin}`;
     }
-    this.pulumiEnvs = {
-      PULUMI_CONFIG_PASSPHRASE: this.pulumiConfigPassphrase,
-      PULUMI_SKIP_UPDATE_CHECK: 'true',
-      PULUMI_ENABLE_LEGACY_PLUGIN_SEARCH: 'false',
-      PULUMI_SKIP_CONFIRMATIONS: 'true',
-      PULUMI_HOME: this.pulumiHome,
-      ...process.env,
-    };
-  }
 
+    this.pulumiEnvs = Object.assign({}, process.env, {
+      PULUMI_CONFIG_PASSPHRASE: this.pulumiConfigPassphrase,
+      PULUMI_SKIP_UPDATE_CHECK: 1,
+      PULUMI_ENABLE_LEGACY_PLUGIN_SEARCH: 1,
+      PULUMI_SKIP_CONFIRMATIONS: 1,
+      PULUMI_HOME: this.pulumiHome,
+    });
+  }
+  async checkPulumiVersion() {
+    const curPulumiVersion = (await runPulumiCmd(['version'], process.cwd(), this.pulumiEnvs)).stdout;
+    if (semver.lt(curPulumiVersion, MIN_PULUMI_VERSION)) {
+      throw new Error(`Your pulumi version: ${curPulumiVersion} is less than ${MIN_PULUMI_VERSION}, please update it. More info refer to https://www.pulumi.com/docs/get-started/install/`);
+    }
+  }
   // 解析入参
   async handlerInputs(inputs) {
     process.setMaxListeners(0);
@@ -275,6 +281,7 @@ export default class PulumiComponent {
   }
 
   async up(inputs): Promise<any> {
+    await this.checkPulumiVersion();
     const {
       credentials,
       cloudPlatform,
@@ -314,33 +321,11 @@ export default class PulumiComponent {
     }
 
     // await runPulumiCmd(['import', 'alicloud:fc/service:Service' , 'import-test', 'python37-demo', '--yes', '--protect=false', `--stack ${stackName}`], process.cwd(), { PULUMI_HOME: this.pulumiHome, PULUMI_CONFIG_PASSPHRASE: this.pulumiConfigPassphrase }, console.log);
-    await this.installPlugins(cloudPlatform, stackName, stack);
-    try {
-      const refreshRes = await stack.refresh({ onOutput: isSilent ? undefined : console.log });
-      this.logger.debug(`refresh res: ${JSON.stringify(refreshRes)}`);
-    } catch (e) {
-      if (e.message.includes('unknown flag: --page-size')) {
-        this.logger.error('Please update your pulumi cli and retry. Refer to https://www.pulumi.com/docs/get-started/install/');
-        return;
-      }
-      throw e;
-    }
-    let res;
-    try {
-      res = await stack.up({ onOutput: isSilent ? undefined : console.log });
-      if (!_.isEmpty(res?.stderr)) {
-        if (res?.stderr.includes('unknown flag: --page-size')) {
-          this.logger.error('Please update your pulumi cli and retry. Refer to https://www.pulumi.com/docs/get-started/install/');
-          return;
-        }
-      }
-    } catch (e) {
-      if (e.message.includes('unknown flag: --page-size')) {
-        this.logger.error('Please update your pulumi cli and retry. Refer to https://www.pulumi.com/docs/get-started/install/');
-        return;
-      }
-      throw e;
-    }
+    // await this.installPlugins(cloudPlatform, stackName, stack);
+    const refreshRes = await stack.refresh({ onOutput: isSilent ? undefined : console.log });
+    this.logger.debug(`refresh res: ${JSON.stringify(refreshRes)}`);
+
+    const res = await stack.up({ onOutput: isSilent ? undefined : console.log });
 
     // const his = await stack.history();
     // const output = await stack.outputs();
@@ -352,6 +337,7 @@ export default class PulumiComponent {
   }
 
   async destroy(inputs): Promise<any> {
+    await this.checkPulumiVersion();
     const {
       credentials,
       cloudPlatform,
@@ -393,24 +379,9 @@ export default class PulumiComponent {
       await stack.setConfig('alicloud:region', { value: region });
     }
 
-    await this.installPlugins(cloudPlatform, stackName, stack);
+    // await this.installPlugins(cloudPlatform, stackName, stack);
 
-    let res;
-    try {
-      res = await stack.destroy({ onOutput: isSilent ? undefined : console.log });
-      if (!_.isEmpty(res?.stderr)) {
-        if (res?.stderr.includes('unknown flag: --page-size')) {
-          this.logger.error('Please update your pulumi cli and retry. Refer to https://www.pulumi.com/docs/get-started/install/');
-          return;
-        }
-      }
-    } catch (e) {
-      if (e.message.includes('unknown flag: --page-size')) {
-        this.logger.error('Please update your pulumi cli and retry. Refer to https://www.pulumi.com/docs/get-started/install/');
-        return;
-      }
-      throw e;
-    }
+    const res = await stack.destroy({ onOutput: isSilent ? undefined : console.log });
     // await stack.workspace.removeStack(stackName);
     return {
       stdout: res?.stdout,
@@ -426,6 +397,15 @@ export default class PulumiComponent {
     await stack.workspace.installPlugin(cloudPlatform, version);
   }
 
+  async installPluginFromLocal(inputs): Promise<void> {
+    // 传入源路径
+    const args = inputs?.Args || inputs?.args;
+    const srcPath = path.resolve(args);
+    const pulumiPluginPath = path.join(this.pulumiHome, 'plugins');
+    this.logger.debug(`Install plugin from ${srcPath} to ${pulumiPluginPath}`);
+    await fse.copy(srcPath, pulumiPluginPath, { overwrite: false, recursive: true });
+  }
+
   readonly pulumiAlreadyExists: boolean;
   readonly pulumiDir: string;
   readonly pulumiHome: string;
@@ -433,6 +413,6 @@ export default class PulumiComponent {
   readonly pulumiPath: string;
   readonly pulumiConfigPassphrase: string;
   readonly pulumiEnvs: {
-    [key: string]: string;
+    [key: string]: any;
   };
 }
